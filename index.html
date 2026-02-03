@@ -1,244 +1,139 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>社内検査 申請管理画面</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <title>社内検査 管理画面</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-
-<style>
-body {
-  font-family: sans-serif;
-  padding: 16px;
-}
-h2 {
-  margin-bottom: 8px;
-}
-button {
-  margin: 4px;
-  padding: 6px 12px;
-}
-table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-top: 16px;
-}
-th, td {
-  border: 1px solid #ccc;
-  padding: 6px;
-  font-size: 13px;
-  white-space: nowrap;
-}
-th {
-  background: #f0f0f0;
-}
-.other {
-  background: #fff3cd;
-}
-.count {
-  margin-top: 8px;
-  font-weight: bold;
-}
-</style>
+  <style>
+    body {
+      font-family: sans-serif;
+      background: #f0f0f0;
+      margin: 0;
+      padding: 16px;
+    }
+    h1 {
+      margin-bottom: 8px;
+    }
+    .controls {
+      background: #fff;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    label {
+      margin-right: 8px;
+    }
+    input, button {
+      padding: 4px 6px;
+      margin-right: 4px;
+    }
+    button {
+      cursor: pointer;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #fff;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px;
+      font-size: 14px;
+    }
+    th {
+      background: #eee;
+    }
+  </style>
 </head>
 
 <body>
+<h1>社内検査 管理画面</h1>
 
-<h2>社内検査 申請管理画面</h2>
-
-<!-- 日付操作 -->
-<div>
-  <button onclick="setToday()">今日</button>
-  <button onclick="setTomorrow()">明日</button>
-
-  <label style="margin-left: 12px;">
-    開始日
-    <input type="date" id="fromDate">
-  </label>
-
+<div class="controls">
   <label>
-    終了日
-    <input type="date" id="toDate">
+    検査日：
+    <input type="date" id="from">
+    ～
+    <input type="date" id="to">
   </label>
 
-  <button onclick="filterByDate()">抽出</button>
-  <button onclick="resetFilter()">解除</button>
+  <button id="todayBtn">今日</button>
+  <button id="tomorrowBtn">明日</button>
+  <button id="loadBtn">表示</button>
 </div>
-
-<!-- 操作 -->
-<div style="margin-top:8px;">
-  <button onclick="loadApplications()">申請データ取得</button>
-  <button onclick="sortByTime()">時間で昇順</button>
-  <button onclick="exportExcel()">Excel出力</button>
-</div>
-
-<div class="count" id="count"></div>
 
 <table>
-<thead>
-<tr>
-  <th>検査日</th>
-  <th>時間</th>
-  <th>検査場所</th>
-  <th>業者</th>
-  <th>船番</th>
-  <th>ブロック</th>
-  <th>区画</th>
-  <th>備考</th>
-  <th>申請日時</th>
-</tr>
-</thead>
-<tbody id="tbody"></tbody>
+  <thead>
+    <tr>
+      <th>検査日</th>
+      <th>時間</th>
+      <th>業者</th>
+      <th>場所</th>
+      <th>船番</th>
+      <th>ブロック</th>
+      <th>区画</th>
+      <th>備考</th>
+    </tr>
+  </thead>
+  <tbody id="list"></tbody>
 </table>
 
 <script>
-/* ================= 設定 ================= */
-const GAS_GET_URL = "https://script.google.com/macros/s/XXXXXXXXXXXX/exec";
+  /* ===== 設定 ===== */
+  const GAS_URL = https://gas-syakenn.onrender.com
+  // ↑ 申請側と同じURL
 
-/* ================= 変数 ================= */
-let allApplications = [];
-let applications = [];
+  const fromInput = document.getElementById("from");
+  const toInput = document.getElementById("to");
+  const list = document.getElementById("list");
 
-/* ================= データ取得 ================= */
-async function loadApplications() {
-  const res = await fetch(GAS_GET_URL);
-  allApplications = await res.json();
-  applications = [...allApplications];
-  render();
-}
+  /* 初期表示：翌日 */
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const t = tomorrow.toISOString().slice(0, 10);
+  fromInput.value = t;
+  toInput.value = t;
 
-/* ================= 今日・明日 ================= */
-function setToday() {
-  const d = new Date();
-  setDateRange(d);
-}
+  document.getElementById("todayBtn").onclick = () => {
+    const d = new Date().toISOString().slice(0, 10);
+    fromInput.value = d;
+    toInput.value = d;
+  };
 
-function setTomorrow() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  setDateRange(d);
-}
+  document.getElementById("tomorrowBtn").onclick = () => {
+    fromInput.value = t;
+    toInput.value = t;
+  };
 
-function setDateRange(date) {
-  const v = date.toISOString().slice(0,10);
-  fromDate.value = v;
-  toDate.value = v;
-  filterByDate();
-}
+  document.getElementById("loadBtn").onclick = loadData;
 
-/* ================= 抽出 ================= */
-function filterByDate() {
-  let from = fromDate.value ? new Date(fromDate.value) : null;
-  let to = toDate.value ? new Date(toDate.value) : null;
+  async function loadData() {
+    list.innerHTML = "";
 
-  // 両方未指定 → 明日
-  if (!from && !to) {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    setDateRange(d);
-    return;
+    const url =
+      GAS_URL +
+      "?from=" + fromInput.value +
+      "&to=" + toInput.value;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    data.forEach(row => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${row.date}</td>
+        <td>${row.hour}</td>
+        <td>${row.vendor}</td>
+        <td>${row.place}</td>
+        <td>${row.ship}</td>
+        <td>${row.block}</td>
+        <td>${row.area}</td>
+        <td>${row.note || ""}</td>
+      `;
+      list.appendChild(tr);
+    });
   }
-
-  applications = allApplications.filter(app => {
-    const t = new Date(app.time);
-    if (from && t < from) return false;
-    if (to) {
-      const end = new Date(to);
-      end.setHours(23,59,59,999);
-      if (t > end) return false;
-    }
-    return true;
-  });
-
-  render();
-}
-
-/* ================= 解除 ================= */
-function resetFilter() {
-  fromDate.value = "";
-  toDate.value = "";
-  applications = [...allApplications];
-  render();
-}
-
-/* ================= 並び替え ================= */
-function sortByTime() {
-  applications.sort((a,b)=>new Date(a.time)-new Date(b.time));
-  render();
-}
-
-/* ================= 表示 ================= */
-function render() {
-  const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
-
-  applications.forEach(app => {
-    const tr = document.createElement("tr");
-
-    if (
-      !["A棟","B棟","C棟","ブロック置き場","SUB"]
-        .some(p => app.place.startsWith(p))
-    ) {
-      tr.classList.add("other");
-    }
-
-    tr.innerHTML = `
-      <td>${fmtDate(app.time)}</td>
-      <td>${fmtHour(app.time)}</td>
-      <td>${app.place}</td>
-      <td>${app.vendor}</td>
-      <td>${app.ship}</td>
-      <td>${app.block}</td>
-      <td>${app.area}</td>
-      <td>${app.note||""}</td>
-      <td>${fmtDateTime(app.created)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-
-  count.textContent = `表示件数：${applications.length}件`;
-}
-
-/* ================= Excel出力 ================= */
-async function exportExcel() {
-  if (!applications.length) return alert("データがありません");
-
-  const res = await fetch("社内検査予定.xlsx");
-  const buf = await res.arrayBuffer();
-  const wb = XLSX.read(buf,{type:"array"});
-  const name = wb.SheetNames[0];
-  const sheet = wb.Sheets[name];
-  const rows = XLSX.utils.sheet_to_json(sheet,{header:1});
-
-  applications.forEach(a=>{
-    rows.push([
-      fmtHour(a.time),
-      a.place,
-      a.vendor,
-      a.ship,
-      a.block,
-      "",
-      a.note||""
-    ]);
-  });
-
-  wb.Sheets[name] = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.writeFile(wb,"社内検査予定_出力.xlsx");
-}
-
-/* ================= util ================= */
-function fmtDate(v){
-  return new Date(v).toLocaleDateString();
-}
-function fmtHour(v){
-  const d=new Date(v);
-  return d.getHours().toString().padStart(2,"0")+":00";
-}
-function fmtDateTime(v){
-  return new Date(v).toLocaleString();
-}
 </script>
-
 </body>
 </html>
