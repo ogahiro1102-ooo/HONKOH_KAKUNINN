@@ -1,133 +1,119 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<title>検査予定 管理画面</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>検査スケジュール管理システム</title>
+  
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  
+  <style>
+    :root {
+      --primary-color: #007bff;
+      --success-color: #28a745;
+      --bg-color: #f8f9fa;
+    }
+    body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; color: #333; }
+    .container { max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+    
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
+    h1 { margin: 0; font-size: 24px; color: #444; }
+    
+    .btn-excel {
+      background-color: var(--success-color);
+      color: white; border: none; padding: 12px 24px; border-radius: 6px;
+      cursor: pointer; font-weight: bold; transition: opacity 0.2s;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .btn-excel:hover { opacity: 0.8; }
 
-<style>
-  body { font-family: sans-serif; }
-  table { border-collapse: collapse; width: 100%; margin-top: 10px; }
-  th, td { border: 1px solid #999; padding: 4px; text-align: center; }
-  th { background: #eee; }
-  .duplicate { background-color: #ffb3b3; }
-</style>
+    .table-wrapper { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 800px; }
+    th { background-color: var(--primary-color); color: white; text-align: left; padding: 12px; position: sticky; top: 0; }
+    td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+    tr:hover { background-color: #f1f7ff; }
+
+    .loading { text-align: center; padding: 50px; font-size: 18px; color: #666; }
+  </style>
 </head>
-
 <body>
 
-<h2>検査予定 管理画面</h2>
+<div class="container">
+  <div class="header">
+    <h1>📅 検査スケジュール一覧</h1>
+    <button class="btn-excel" onclick="downloadExcel()">
+      <span>📊</span> Excelをダウンロード
+    </button>
+  </div>
 
-<div>
-  開始日：
-  <input type="date" id="from">
-  終了日：
-  <input type="date" id="to">
-  <button onclick="loadData()">表示</button>
-  <button onclick="downloadExcel()">Excel出力</button>
+  <div class="table-wrapper">
+    <div id="loader" class="loading">データを取得中...</div>
+    <table id="data-table" style="display: none;">
+      <thead id="table-head"></thead>
+      <tbody id="table-body"></tbody>
+    </table>
+  </div>
 </div>
 
-<table id="table">
-  <thead>
-    <tr>
-      <th>業者名</th>
-      <th>船番</th>
-      <th>ブロック</th>
-      <th>区画</th>
-      <th>検査日</th>
-      <th>時間</th>
-      <th>検査場所</th>
-      <th>備考</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
-
 <script>
-const GAS_URL ="https://script.google.com/macros/s/AKfycbwb5sO28TDNZK64sSetBn-Pec5y3YwDUM361-ueXUdwZMIXc_G__Qzy93Ul1pNajuZyQA/exec"
-let currentData = [];
+  // 1. "https://script.google.com/macros/s/AKfycbxDxTptZiGLJaGjD9XyBf3-hJgEfECI5EKCtQLh-NEZA9vk085Y-mkeNd0RlRUnMxsCcg/exec"
+  const GAS_API_URL = "ここにあなたのGASウェブアプリURLを貼り付け";
 
-function loadData() {
-  const from = document.getElementById("from").value;
-  const to   = document.getElementById("to").value;
+  let cachedData = [];
 
-  let url = GAS_URL;
-  if (from && to) {
-    url += `?from=${from}&to=${to}`;
-  }
+  // ページ読み込み時に実行
+  window.onload = fetchData;
 
-  fetch(url)
-    .then(res => res.json())
-    .then(data => {
-      currentData = data;
+  async function fetchData() {
+    try {
+      const response = await fetch(GAS_API_URL);
+      const data = await response.json();
+      
+      if (data.error) throw new Error(data.error);
+      
+      cachedData = data;
       renderTable(data);
-    })
-    .catch(() => {
-      alert("データ取得に失敗しました");
-    });
-}
-
-function renderTable(data) {
-  const tbody = document.querySelector("#table tbody");
-  tbody.innerHTML = "";
-
-  // 重複チェック用
-  const map = {};
-  data.forEach(d => {
-    const key = `${d.date}_${d.time}_${d.place}`;
-    map[key] = (map[key] || 0) + 1;
-  });
-
-  data.forEach(d => {
-    const key = `${d.date}_${d.time}_${d.place}`;
-    const tr = document.createElement("tr");
-
-    if (map[key] > 1) {
-      tr.classList.add("duplicate");
+    } catch (error) {
+      document.getElementById('loader').innerHTML = 
+        `<span style="color:red">エラーが発生しました: ${error.message}</span>`;
     }
-
-    tr.innerHTML = `
-      <td>${d.vendor}</td>
-      <td>${d.shipNo}</td>
-      <td>${d.block}</td>
-      <td>${d.area}</td>
-      <td>${d.date}</td>
-      <td>${d.time}</td>
-      <td>${d.place}</td>
-      <td>${d.note}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
-
-function downloadExcel() {
-  if (currentData.length === 0) {
-    alert("データがありません");
-    return;
   }
 
-  let csv = "業者名,船番,ブロック,区画,検査日,時間,検査場所,備考\n";
-  currentData.forEach(d => {
-    csv += [
-      d.vendor,
-      d.shipNo,
-      d.block,
-      d.area,
-      d.date,
-      d.time,
-      d.place,
-      d.note
-    ].join(",") + "\n";
-  });
+  function renderTable(data) {
+    const head = document.getElementById('table-head');
+    const body = document.getElementById('table-body');
+    const loader = document.getElementById('loader');
+    const table = document.getElementById('data-table');
 
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
+    // ヘッダー作成
+    const headers = data[0];
+    head.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "社内検査予定.csv";
-  a.click();
-  URL.revokeObjectURL(url);
-}
+    // データ行作成
+    body.innerHTML = data.slice(1).map(row => 
+      `<tr>${row.map(cell => `<td>${cell || ''}</td>`).join('')}</tr>`
+    ).join('');
+
+    loader.style.display = 'none';
+    table.style.display = 'table';
+  }
+
+  // Excelダウンロード処理
+  function downloadExcel() {
+    if (cachedData.length === 0) {
+      alert("データの読み込みが完了していません");
+      return;
+    }
+    
+    // データの変換 (Array of Arrays -> Sheet)
+    const worksheet = XLSX.utils.aoa_to_sheet(cachedData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Schedule");
+
+    // 今日の日付を取得してファイル名にする
+    const today = new Date().toISOString().split('T')[0];
+    XLSX.writeFile(workbook, `検査スケジュール_${today}.xlsx`);
+  }
 </script>
 
 </body>
