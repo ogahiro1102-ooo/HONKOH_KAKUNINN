@@ -1,187 +1,119 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>社内検査 申請 管理画面（見るわよ）</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-  <!-- Excel出力用（SheetJS） -->
+  <meta charset="utf-8">
+  <title>検査申請 管理</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-
   <style>
-    body {
-      font-family: system-ui, sans-serif;
-      background: #f4f6f8;
-      padding: 16px;
-    }
-    h1 {
-      text-align: center;
-      margin-bottom: 16px;
-    }
-    .controls {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 12px;
-      justify-content: center;
-    }
-    input, button {
-      padding: 8px;
-      font-size: 14px;
-    }
-    button {
-      cursor: pointer;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: #fff;
-    }
-    th, td {
-      border: 1px solid #ccc;
-      padding: 6px;
-      font-size: 13px;
-      white-space: nowrap;
-      text-align: center;
-    }
-    th {
-      background: #eee;
-    }
-    tr.duplicate {
-      background: #ffd6d6;
-    }
+    body{font-family:system-ui; padding:12px; background:#f4f6f8}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+    input,button,select{padding:8px;font-size:14px}
+    table{width:100%;border-collapse:collapse;background:#fff}
+    th,td{border:1px solid #ccc;padding:6px;text-align:center;font-size:13px}
+    th{background:#eee}
+    tr.dup{background:#ffd6d6}
   </style>
 </head>
 <body>
+  <h2 style="text-align:center">検査申請 管理画面</h2>
 
-<h1>検査申請 管理画面（見るわよ）</h1>
+  <div class="controls">
+    <input type="date" id="start">
+    <span>〜</span>
+    <input type="date" id="end">
+    <button id="btnToday">今日</button>
+    <button id="btnTomorrow">明日</button>
+    <button id="btnLoad">表示</button>
+    <button id="btnExcel">Excel出力</button>
+  </div>
 
-<div class="controls">
-  <input type="date" id="start">
-  <span>～</span>
-  <input type="date" id="end">
-
-  <button onclick="setToday()">今日</button>
-  <button onclick="setTomorrow()">明日</button>
-  <button onclick="loadData()">表示</button>
-  <button onclick="exportExcel()">Excel出力</button>
-</div>
-
-<table>
-  <thead>
-    <tr>
-      <th>業者名</th>
-      <th>船番</th>
-      <th>ブロック</th>
-      <th>区画</th>
-      <th>検査日</th>
-      <th>時間</th>
-      <th>場所</th>
-      <th>備考</th>
-    </tr>
-  </thead>
-  <tbody id="tbody"></tbody>
-</table>
+  <table>
+    <thead>
+      <tr>
+        <th>業者名</th><th>船番</th><th>ブロック</th><th>区画</th>
+        <th>検査日</th><th>時間</th><th>場所</th><th>備考</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+  </table>
 
 <script>
-/* =========================
-   設定
-========================= */
-const GAS_URL = "ここにGASのURL";
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbwd2Zh7ng92GXoFMb9PT9ucUFyLAoykeEfC4pe7Hn_9k9zjV0m87GtmVkNXjXLCW9_zQQ/exec"; // ← 新しい /exec URL
 
-/* =========================
-   日付ボタン
-========================= */
-function setToday() {
-  const d = new Date();
-  const s = d.toISOString().slice(0, 10);
-  start.value = s;
-  end.value = s;
-}
-
-function setTomorrow() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  const s = d.toISOString().slice(0, 10);
-  start.value = s;
-  end.value = s;
-}
-
-/* =========================
-   データ表示
-========================= */
-async function loadData() {
-  const s = start.value;
-  const e = end.value;
-
-  const url = `${"https://script.google.com/macros/s/AKfycbwOVtTolytMDqpVHN2lD5rHUGmPJDeBBT14r76HH4_vxu65KuGf8LmXRNzVDKP118ovtw/exec"}?start=${s}&end=${e}`;
-  const res = await fetch(url);
-  const data = await res.json();
-
-  const tbody = document.getElementById("tbody");
-  tbody.innerHTML = "";
-
-  // 重複判定用
-  const map = {};
-  data.forEach(r => {
-    const key = `${r[5]}_${r[6]}_${r[7]}`; // 検査日_時間_場所
-    map[key] = (map[key] || 0) + 1;
+  document.getElementById('btnToday').addEventListener('click', () => {
+    const d = new Date(); const s = d.toISOString().slice(0,10);
+    start.value = s; end.value = s;
+  });
+  document.getElementById('btnTomorrow').addEventListener('click', () => {
+    const d = new Date(); d.setDate(d.getDate()+1); const s = d.toISOString().slice(0,10);
+    start.value = s; end.value = s;
   });
 
-  data.forEach(r => {
-    const key = `${r[5]}_${r[6]}_${r[7]}`;
-    const tr = document.createElement("tr");
-    if (map[key] > 1) tr.classList.add("duplicate");
+  document.getElementById('btnLoad').addEventListener('click', loadData);
+  document.getElementById('btnExcel').addEventListener('click', exportExcel);
 
-    tr.innerHTML = `
-      <td>${r[1]}</td>
-      <td>${r[2]}</td>
-      <td>${r[3]}</td>
-      <td>${r[4]}</td>
-      <td>${r[5]}</td>
-      <td>${r[6]}</td>
-      <td>${r[7]}</td>
-      <td>${r[8]}</td>
-    `;
-    tbody.appendChild(tr);
-  });
-}
+  async function loadData(){
+    const s = start.value || "";
+    const e = end.value || "";
+    try {
+      const res = await fetch(`${GAS_URL}?start=${s}&end=${e}`);
+      const data = await res.json(); // expect array of arrays
+      renderTable(data);
+    } catch (err) {
+      alert('データ取得に失敗しました');
+      console.error(err);
+    }
+  }
 
-/* =========================
-   Excel出力（GAS変更なし）
-========================= */
-async function exportExcel() {
-  const s = start.value;
-  const e = end.value;
+  function renderTable(data){
+    const tbody = document.getElementById('tbody');
+    tbody.innerHTML = '';
 
-  const url = `${"https://script.google.com/macros/s/AKfycbwOVtTolytMDqpVHN2lD5rHUGmPJDeBBT14r76HH4_vxu65KuGf8LmXRNzVDKP118ovtw/exec"}?start=${s}&end=${e}`;
-  const res = await fetch(url);
-  const data = await res.json();
+    // 重複判定：検査日_時間_場所
+    const map = {};
+    data.forEach(r => {
+      const key = `${r[5]}_${r[6]}_${r[7]}`;
+      map[key] = (map[key]||0)+1;
+    });
 
-  const rows = [
-    ["業者名", "船番", "ブロック", "区画", "検査日", "時間", "場所", "備考"]
-  ];
+    data.forEach(r => {
+      const key = `${r[5]}_${r[6]}_${r[7]}`;
+      const tr = document.createElement('tr');
+      if (map[key] > 1) tr.classList.add('dup');
+      tr.innerHTML = `
+        <td>${escapeHtml(r[1])}</td>
+        <td>${escapeHtml(r[2])}</td>
+        <td>${escapeHtml(r[3])}</td>
+        <td>${escapeHtml(r[4])}</td>
+        <td>${escapeHtml(r[5])}</td>
+        <td>${escapeHtml(r[6])}</td>
+        <td>${escapeHtml(r[7])}</td>
+        <td>${escapeHtml(r[8])}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
 
-  data.forEach(r => {
-    rows.push([
-      r[1],
-      r[2],
-      r[3],
-      r[4],
-      r[5],
-      r[6],
-      r[7],
-      r[8]
-    ]);
-  });
+  function escapeHtml(s){ if(s===null||s===undefined) return ''; return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-  const wb = XLSX.utils.book_new();
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  XLSX.utils.book_append_sheet(wb, ws, "社内検査予定");
-
-  XLSX.writeFile(wb, "社内検査予定.xlsx");
-}
+  async function exportExcel(){
+    const s = start.value || "";
+    const e = end.value || "";
+    try {
+      const res = await fetch(`${GAS_URL}?start=${s}&end=${e}`);
+      const data = await res.json();
+      const rows = [["業者名","船番","ブロック","区画","検査日","時間","場所","備考"]];
+      data.forEach(r => rows.push([r[1],r[2],r[3],r[4],r[5],r[6],r[7],r[8]]));
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      XLSX.utils.book_append_sheet(wb, ws, "社内検査予定");
+      XLSX.writeFile(wb, "社内検査予定.xlsx");
+    } catch (err) {
+      alert('Excel出力に失敗しました');
+      console.error(err);
+    }
+  }
 </script>
-
 </body>
 </html>
