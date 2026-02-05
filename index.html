@@ -9,6 +9,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   
   <style>
+    /* デザイン設定（バイブス高めのモダンUI） */
     :root {
       --primary-color: #007bff;
       --success-color: #28a745;
@@ -38,7 +39,6 @@
 
     .loading { text-align: center; padding: 50px; font-size: 18px; color: #666; }
     
-    /* 画面サイズが小さい時の調整 */
     @media (max-width: 768px) {
       .header { flex-direction: column; align-items: flex-start; }
       .btn-excel { margin-left: 0; width: 100%; justify-content: center; }
@@ -58,7 +58,7 @@
     </div>
 
     <button class="btn btn-excel" onclick="downloadExcel()">
-      📊 Excelダウンロード (罫線付き)
+      📊 Excelダウンロード (書式付)
     </button>
   </div>
 
@@ -73,7 +73,7 @@
 
 <script>
   // ==========================================
-  // 1. 【設定】GASのAPI URLをここに貼り付け
+  // 【重要】GASのAPI URLをここに貼り付け
   // ==========================================
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxDxTptZiGLJaGjD9XyBf3-hJgEfECI5EKCtQLh-NEZA9vk085Y-mkeNd0RlRUnMxsCcg/exec";
 
@@ -82,7 +82,7 @@
 
   window.onload = fetchData;
 
-  // 2. データ取得と3段階並び替え
+  // 1. データ取得と並び替えロジック
   async function fetchData() {
     try {
       const response = await fetch(GAS_API_URL);
@@ -93,21 +93,21 @@
       const header = data[0];
       let rows = data.slice(1);
 
-      // --- 並び替え（最優先：検査日F > 優先：時間G > タイムスタンプA） ---
+      // --- ソート順: 日付(F) > 時間(G) > 申し込み順(A) ---
       rows.sort((a, b) => {
-        // ① 検査日 (F列: インデックス5)
+        // ① 検査日 (F列: index 5)
         const dateA = a[5] || "";
         const dateB = b[5] || "";
         const dateSort = dateA.localeCompare(dateB);
         if (dateSort !== 0) return dateSort;
 
-        // ② 検査希望時刻 (G列: インデックス6)
+        // ② 時間 (G列: index 6)
         const timeA = a[6] || "";
         const timeB = b[6] || "";
         const timeSort = timeA.localeCompare(timeB, undefined, { numeric: true });
         if (timeSort !== 0) return timeSort;
 
-        // ③ タイムスタンプ (A列: インデックス0)
+        // ③ タイムスタンプ (A列: index 0)
         return new Date(a[0]) - new Date(b[0]);
       });
 
@@ -115,25 +115,23 @@
       filteredData = allData;
       renderTable(allData);
     } catch (error) {
-      document.getElementById('loader').innerHTML = `<span style="color:red">接続エラー: APIのURLまたはデプロイ設定を確認してください。</span>`;
+      document.getElementById('loader').innerHTML = `<span style="color:red">エラー: API URLを確認してください。</span>`;
       console.error(error);
     }
   }
 
-  // 3. 日付抽出機能
+  // 2. フィルタ機能
   function filterData() {
     const targetDate = document.getElementById('date-filter').value;
     if (!targetDate) {
-      alert("抽出したい日付を選択してください");
+      alert("日付を選択してください");
       return;
     }
     const header = allData[0];
     const rows = allData.slice(1).filter(row => row[5] === targetDate);
-    
     filteredData = [header, ...rows];
     renderTable(filteredData);
-    
-    if (rows.length === 0) alert("該当日のデータはありませんでした。");
+    if (rows.length === 0) alert("該当データなし");
   }
 
   function resetFilter() {
@@ -142,7 +140,7 @@
     renderTable(allData);
   }
 
-  // 4. テーブル表示
+  // 3. 画面表示用 (Web上は元の並び順で表示)
   function renderTable(data) {
     const head = document.getElementById('table-head');
     const body = document.getElementById('table-body');
@@ -158,7 +156,7 @@
     table.style.display = 'table';
   }
 
-  // 5. 高度なExcel出力 (ExcelJS使用)
+  // 4. Excel出力 (列並び替え & 罫線スタイル適用)
   async function downloadExcel() {
     if (filteredData.length <= 1) {
       alert("出力するデータがありません");
@@ -168,37 +166,41 @@
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('検査スケジュール');
 
-    // データ追加
-    worksheet.addRows(filteredData);
+    // --- A. 列の並び替え ---
+    // 元データ(Sheet): 0:TS, 1:業者, 2:船番, 3:ブロック, 4:区画, 5:日付, 6:時間, 7:場所, 8:備考
+    // 出力順序: TS(0), 日付(5), 時間(6), 場所(7), 業者(1), 船番(2), ブロック(3), 区画(4), 備考(8)
+    const colOrder = [0, 5, 6, 7, 1, 2, 3, 4, 8];
+    const excelRows = filteredData.map(row => colOrder.map(idx => row[idx]));
 
-    // --- 列幅の自動調整 ---
-    worksheet.columns.forEach((column, i) => {
+    worksheet.addRows(excelRows);
+
+    // --- B. 列幅の自動調整 ---
+    worksheet.columns.forEach((column) => {
       let maxLength = 0;
       column.eachCell({ includeEmpty: true }, (cell) => {
         const columnLength = cell.value ? cell.value.toString().length : 10;
         if (columnLength > maxLength) maxLength = columnLength;
       });
-      column.width = maxLength < 10 ? 10 : maxLength + 5; // 全角考慮で少し余裕を持たせる
+      column.width = maxLength < 10 ? 12 : maxLength + 4;
     });
 
-    // --- 罫線設定ロジック (A1:J[最後]) ---
+    // --- C. 罫線とスタイルの適用 ---
     const rowCount = worksheet.rowCount;
     
     for (let i = 1; i <= rowCount; i++) {
       const currentRow = worksheet.getRow(i);
       const nextRow = worksheet.getRow(i + 1);
 
-      // セルの値を取得 (F列: 検査日, G列: 時間)
-      const curDate = currentRow.getCell(6).value;
-      const nextDate = nextRow ? nextRow.getCell(6).value : null;
-      const curTime = currentRow.getCell(7).value;
-      const nextTime = nextRow ? nextRow.getCell(7).value : null;
+      // 並び替え後の列位置で取得 (2列目:日付, 3列目:時間)
+      const curDate = currentRow.getCell(2).value; 
+      const nextDate = nextRow ? nextRow.getCell(2).value : null;
+      const curTime = currentRow.getCell(3).value;
+      const nextTime = nextRow ? nextRow.getCell(3).value : null;
 
-      // A列(1)からJ列(10)までループして罫線を引く
-      for (let col = 1; col <= 10; col++) {
+      // 指定された列数分（今回は9列）だけループ
+      for (let col = 1; col <= colOrder.length; col++) {
         const cell = currentRow.getCell(col);
         
-        // 基本の細枠
         let borderStyle = {
           top: { style: 'thin' },
           left: { style: 'thin' },
@@ -206,26 +208,24 @@
           right: { style: 'thin' }
         };
 
-        // 見出し行(1行目)の下は少し太く
+        // 見出しの下は中太線
         if (i === 1) {
           borderStyle.bottom = { style: 'medium' };
+          // 見出しのスタイル
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
+          cell.font = { bold: true };
+          cell.alignment = { horizontal: 'center' };
         } 
-        // 検査日が変わるタイミング：下線を「太線(medium)」に
+        // 検査日が変わる行の下は中太線
         else if (nextDate && curDate !== nextDate) {
-          borderStyle.bottom = { style: 'medium' };
+          borderStyle.bottom = { style: 'medium' }; 
         }
-        // 時間が変わるタイミング（日付は同じ）：下線を「細線(thin)」に
+        // 時間が変わる行の下は細線
         else if (nextTime && curTime !== nextTime) {
-          borderStyle.bottom = { style: 'thin' };
+          borderStyle.bottom = { style: 'thin' };   
         }
 
         cell.border = borderStyle;
-        
-        // 見出し行のデザイン調整
-        if (i === 1) {
-          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
-          cell.font = { bold: true };
-        }
       }
     }
 
