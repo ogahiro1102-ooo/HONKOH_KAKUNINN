@@ -5,35 +5,44 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>検査スケジュール管理システム</title>
   
-  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
   
   <style>
     :root {
       --primary-color: #007bff;
       --success-color: #28a745;
+      --secondary-color: #6c757d;
       --bg-color: #f8f9fa;
     }
-    body { font-family: "Helvetica Neue", Arial, sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; color: #333; }
+    body { font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; background-color: var(--bg-color); margin: 0; padding: 20px; color: #333; }
     .container { max-width: 1200px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     
-    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 2px solid #eee; padding-bottom: 20px; }
-    h1 { margin: 0; font-size: 24px; color: #444; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 2px solid #eee; padding-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+    h1 { margin: 0; font-size: 24px; color: #444; display: flex; align-items: center; gap: 10px; }
     
-    .btn-excel {
-      background-color: var(--success-color);
-      color: white; border: none; padding: 12px 24px; border-radius: 6px;
-      cursor: pointer; font-weight: bold; transition: opacity 0.2s;
-      display: flex; align-items: center; gap: 8px;
-    }
-    .btn-excel:hover { opacity: 0.8; }
+    .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input[type="date"] { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+    
+    .btn { border: none; padding: 10px 18px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: opacity 0.2s; font-size: 14px; color: white; display: flex; align-items: center; gap: 5px; }
+    .btn:hover { opacity: 0.8; }
+    .btn-filter { background-color: var(--primary-color); }
+    .btn-reset { background-color: var(--secondary-color); }
+    .btn-excel { background-color: var(--success-color); margin-left: auto; }
 
-    .table-wrapper { overflow-x: auto; }
-    table { width: 100%; border-collapse: collapse; min-width: 800px; }
-    th { background-color: var(--primary-color); color: white; text-align: left; padding: 12px; position: sticky; top: 0; }
-    td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; }
+    .table-wrapper { overflow-x: auto; margin-top: 10px; border-radius: 8px; border: 1px solid #eee; }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; }
+    th { background-color: var(--primary-color); color: white; text-align: left; padding: 12px; position: sticky; top: 0; font-size: 14px; white-space: nowrap; }
+    td { padding: 12px; border-bottom: 1px solid #eee; font-size: 14px; color: #555; }
     tr:hover { background-color: #f1f7ff; }
 
     .loading { text-align: center; padding: 50px; font-size: 18px; color: #666; }
+    
+    /* 画面サイズが小さい時の調整 */
+    @media (max-width: 768px) {
+      .header { flex-direction: column; align-items: flex-start; }
+      .btn-excel { margin-left: 0; width: 100%; justify-content: center; }
+    }
   </style>
 </head>
 <body>
@@ -41,8 +50,15 @@
 <div class="container">
   <div class="header">
     <h1>📅 検査スケジュール一覧</h1>
-    <button class="btn-excel" onclick="downloadExcel()">
-      <span>📊</span> Excelをダウンロード
+    
+    <div class="controls">
+      <input type="date" id="date-filter">
+      <button class="btn btn-filter" onclick="filterData()">🔍 抽出</button>
+      <button class="btn btn-reset" onclick="resetFilter()">🔄 全表示</button>
+    </div>
+
+    <button class="btn btn-excel" onclick="downloadExcel()">
+      📊 Excelダウンロード (罫線付き)
     </button>
   </div>
 
@@ -56,40 +72,84 @@
 </div>
 
 <script>
-  // 1. 【ここを書き換え】作成したAPI専用GASのURLを貼り付けてください
+  // ==========================================
+  // 1. 【設定】GASのAPI URLをここに貼り付け
+  // ==========================================
   const GAS_API_URL = "https://script.google.com/macros/s/AKfycbxDxTptZiGLJaGjD9XyBf3-hJgEfECI5EKCtQLh-NEZA9vk085Y-mkeNd0RlRUnMxsCcg/exec";
 
-  let cachedData = [];
+  let allData = [];      // 全データ（ソート済み）
+  let filteredData = []; // 現在画面に表示されているデータ
 
-  // ページ読み込み時に実行
   window.onload = fetchData;
 
+  // 2. データ取得と3段階並び替え
   async function fetchData() {
     try {
       const response = await fetch(GAS_API_URL);
       const data = await response.json();
       
       if (data.error) throw new Error(data.error);
-      
-      cachedData = data;
-      renderTable(data);
+
+      const header = data[0];
+      let rows = data.slice(1);
+
+      // --- 並び替え（最優先：検査日F > 優先：時間G > タイムスタンプA） ---
+      rows.sort((a, b) => {
+        // ① 検査日 (F列: インデックス5)
+        const dateA = a[5] || "";
+        const dateB = b[5] || "";
+        const dateSort = dateA.localeCompare(dateB);
+        if (dateSort !== 0) return dateSort;
+
+        // ② 検査希望時刻 (G列: インデックス6)
+        const timeA = a[6] || "";
+        const timeB = b[6] || "";
+        const timeSort = timeA.localeCompare(timeB, undefined, { numeric: true });
+        if (timeSort !== 0) return timeSort;
+
+        // ③ タイムスタンプ (A列: インデックス0)
+        return new Date(a[0]) - new Date(b[0]);
+      });
+
+      allData = [header, ...rows];
+      filteredData = allData;
+      renderTable(allData);
     } catch (error) {
-      document.getElementById('loader').innerHTML = 
-        `<span style="color:red">エラーが発生しました: ${error.message}</span>`;
+      document.getElementById('loader').innerHTML = `<span style="color:red">接続エラー: APIのURLまたはデプロイ設定を確認してください。</span>`;
+      console.error(error);
     }
   }
 
+  // 3. 日付抽出機能
+  function filterData() {
+    const targetDate = document.getElementById('date-filter').value;
+    if (!targetDate) {
+      alert("抽出したい日付を選択してください");
+      return;
+    }
+    const header = allData[0];
+    const rows = allData.slice(1).filter(row => row[5] === targetDate);
+    
+    filteredData = [header, ...rows];
+    renderTable(filteredData);
+    
+    if (rows.length === 0) alert("該当日のデータはありませんでした。");
+  }
+
+  function resetFilter() {
+    document.getElementById('date-filter').value = "";
+    filteredData = allData;
+    renderTable(allData);
+  }
+
+  // 4. テーブル表示
   function renderTable(data) {
     const head = document.getElementById('table-head');
     const body = document.getElementById('table-body');
-    const loader = document.getElementById('loader');
     const table = document.getElementById('data-table');
+    const loader = document.getElementById('loader');
 
-    // ヘッダー作成
-    const headers = data[0];
-    head.innerHTML = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`;
-
-    // データ行作成
+    head.innerHTML = `<tr>${data[0].map(h => `<th>${h}</th>`).join('')}</tr>`;
     body.innerHTML = data.slice(1).map(row => 
       `<tr>${row.map(cell => `<td>${cell || ''}</td>`).join('')}</tr>`
     ).join('');
@@ -98,21 +158,81 @@
     table.style.display = 'table';
   }
 
-  // Excelダウンロード処理
-  function downloadExcel() {
-    if (cachedData.length === 0) {
-      alert("データの読み込みが完了していません");
+  // 5. 高度なExcel出力 (ExcelJS使用)
+  async function downloadExcel() {
+    if (filteredData.length <= 1) {
+      alert("出力するデータがありません");
       return;
     }
-    
-    // データの変換 (Array of Arrays -> Sheet)
-    const worksheet = XLSX.utils.aoa_to_sheet(cachedData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "Schedule");
 
-    // 今日の日付を取得してファイル名にする
-    const today = new Date().toISOString().split('T')[0];
-    XLSX.writeFile(workbook, `検査スケジュール_${today}.xlsx`);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('検査スケジュール');
+
+    // データ追加
+    worksheet.addRows(filteredData);
+
+    // --- 列幅の自動調整 ---
+    worksheet.columns.forEach((column, i) => {
+      let maxLength = 0;
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        const columnLength = cell.value ? cell.value.toString().length : 10;
+        if (columnLength > maxLength) maxLength = columnLength;
+      });
+      column.width = maxLength < 10 ? 10 : maxLength + 5; // 全角考慮で少し余裕を持たせる
+    });
+
+    // --- 罫線設定ロジック (A1:J[最後]) ---
+    const rowCount = worksheet.rowCount;
+    
+    for (let i = 1; i <= rowCount; i++) {
+      const currentRow = worksheet.getRow(i);
+      const nextRow = worksheet.getRow(i + 1);
+
+      // セルの値を取得 (F列: 検査日, G列: 時間)
+      const curDate = currentRow.getCell(6).value;
+      const nextDate = nextRow ? nextRow.getCell(6).value : null;
+      const curTime = currentRow.getCell(7).value;
+      const nextTime = nextRow ? nextRow.getCell(7).value : null;
+
+      // A列(1)からJ列(10)までループして罫線を引く
+      for (let col = 1; col <= 10; col++) {
+        const cell = currentRow.getCell(col);
+        
+        // 基本の細枠
+        let borderStyle = {
+          top: { style: 'thin' },
+          left: { style: 'thin' },
+          bottom: { style: 'thin' },
+          right: { style: 'thin' }
+        };
+
+        // 見出し行(1行目)の下は少し太く
+        if (i === 1) {
+          borderStyle.bottom = { style: 'medium' };
+        } 
+        // 検査日が変わるタイミング：下線を「太線(medium)」に
+        else if (nextDate && curDate !== nextDate) {
+          borderStyle.bottom = { style: 'medium' };
+        }
+        // 時間が変わるタイミング（日付は同じ）：下線を「細線(thin)」に
+        else if (nextTime && curTime !== nextTime) {
+          borderStyle.bottom = { style: 'thin' };
+        }
+
+        cell.border = borderStyle;
+        
+        // 見出し行のデザイン調整
+        if (i === 1) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
+          cell.font = { bold: true };
+        }
+      }
+    }
+
+    // 保存実行
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filterVal = document.getElementById('date-filter').value || "全日程";
+    saveAs(new Blob([buffer]), `検査スケジュール_${filterVal}.xlsx`);
   }
 </script>
 
