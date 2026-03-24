@@ -27,7 +27,6 @@ h2{
   margin-bottom:20px;
 }
 
-/* フィルター */
 .controls{
   display:flex;
   gap:10px;
@@ -52,7 +51,6 @@ button:hover{
   opacity:0.8;
 }
 
-/* テーブル */
 .table-wrap{
   overflow-x:auto;
 }
@@ -96,14 +94,15 @@ tr:hover{
 
 <div class="table-wrap">
 <table>
+
 <thead>
 <tr>
-<th>検査日</th>
-<th>時間</th>
 <th>業者名</th>
 <th>船番</th>
 <th>ブロック</th>
 <th>区画</th>
+<th>検査日</th>
+<th>時間</th>
 <th>検査場所</th>
 <th>備考</th>
 </tr>
@@ -122,7 +121,7 @@ const GAS_URL = "https://script.google.com/macros/s/AKfycbz_Q0_l2F9tOhtnSE_s45Qu
 
 let allData = [];
 
-/* 日付フォーマット調整 */
+/* 日付フォーマット */
 function normalizeDate(d){
   return d.replaceAll("/", "-");
 }
@@ -135,10 +134,10 @@ async function load(){
 
   const rows = data.slice(1);
 
-  // 並び替え
+  // 並び替え（検査日 → 時間）
   rows.sort((a,b)=>{
-    if(a[6] !== b[6]) return a[6].localeCompare(b[6]);
-    return a[7].localeCompare(b[7]);
+    if(a[5] !== b[5]) return a[5].localeCompare(b[5]);
+    return a[6].localeCompare(b[6]);
   });
 
   allData = rows;
@@ -146,21 +145,21 @@ async function load(){
   draw(rows);
 }
 
-/* 表示 */
+/* 表示（タイムスタンプ除外） */
 function draw(data){
 
   const body = document.getElementById("body");
 
   body.innerHTML = data.map(r=>`
     <tr>
-      <td>${r[6]}</td>
-      <td>${r[7]}</td>
-      <td>${r[2]}</td>
-      <td>${r[3]}</td>
-      <td>${r[4]}</td>
-      <td>${r[5]}</td>
-      <td>${r[8]}</td>
-      <td>${r[9]}</td>
+      <td>${r[1]}</td>  <!-- 業者名 -->
+      <td>${r[2]}</td>  <!-- 船番 -->
+      <td>${r[3]}</td>  <!-- ブロック -->
+      <td>${r[4]}</td>  <!-- 区画 -->
+      <td>${r[5]}</td>  <!-- 検査日 -->
+      <td>${r[6]}</td>  <!-- 時間 -->
+      <td>${r[7]}</td>  <!-- 検査場所 -->
+      <td>${r[8]}</td>  <!-- 備考 -->
     </tr>
   `).join("");
 
@@ -176,7 +175,7 @@ function filter(){
     return;
   }
 
-  const f = allData.filter(r => normalizeDate(r[6]) === d);
+  const f = allData.filter(r => normalizeDate(r[5]) === d);
 
   draw(f);
 
